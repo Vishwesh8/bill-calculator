@@ -119,14 +119,14 @@
    TARIFF CONFIGURATION — edit only this block when rates change
    ============================================================ */
 const TARIFF = {
-  ratesAsOf: "Nov 2026",                            // update to the date the new rates apply
+  ratesAsOf: "Nov 2026",
   fixedCharge: 445.00,                              // ₹ per month
-  energySlabs: [[100, 3.96], [300, 10.80], [500, 15.03], [Infinity, 17.53]],
-  fuelSlabs:   [[100, 0.25], [300, 0.45],  [500, 0.65],  [Infinity, 0.70]],
+  energySlabs: [[200, 15.03], [Infinity, 17.53]],   // [up to units, ₹/unit], incremental
+  fuelSlabs:   [[200, 0.65],  [Infinity, 0.70]],    // [up to units, ₹/unit], incremental
   unitChargeRate: 1.60,                             // ₹ per unit, all units
   taxPct: 16                                        // % of (fixed + energy + fuel + unit charges)
 };
-const METER = { multiplyingFactor: 1 };
+const METER = { multiplyingFactor: 1 };             // change if the bill shows an MF
 /* ============================================================ */
 
 const STORAGE_KEY = "factoryBill.v1";
