@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f4e79">
+<title>Factory Bill Calculator</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #f4f6f8; --card: #ffffff; --text: #1a1a1a; --muted: #5f6b76;
+    --accent: #1f4e79; --accent-text: #ffffff; --border: #dde3e8;
+    --error: #b42318; --ok: #067647;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121417; --card: #1c2025; --text: #eef1f4; --muted: #9aa5b1;
+      --accent: #4a8fd4; --accent-text: #0b1220; --border: #2d333b;
+      --error: #f97066; --ok: #47cd89;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 18px; line-height: 1.4;
+  }
+  main { max-width: 480px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.3rem; margin: 4px 0 16px; }
+  h2 { font-size: 1rem; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px; margin-bottom: 16px;
+  }
+  label { display: block; font-size: .95rem; color: var(--muted); margin-bottom: 4px; }
+  input {
+    width: 100%; font-size: 1.4rem; padding: 12px; margin-bottom: 12px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--text);
+  }
+  input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .units { font-size: 1rem; color: var(--muted); margin: 0; }
+  .units strong { color: var(--text); font-size: 1.2rem; }
+  .msg { font-size: .95rem; min-height: 1.2em; margin: 6px 0 0; }
+  .msg.error { color: var(--error); }
+  .msg.ok { color: var(--ok); }
+  .total {
+    background: var(--accent); color: var(--accent-text);
+    border-radius: 12px; padding: 20px 16px; text-align: center; margin-bottom: 16px;
+  }
+  .total .label { font-size: 1rem; opacity: .9; }
+  .total .amount { font-size: 2.6rem; font-weight: 700; letter-spacing: .5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 1rem; }
+  td { padding: 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td small { display: block; color: var(--muted); font-size: .8rem; }
+  tr.sub td { font-weight: 600; }
+  tr.grand td { font-weight: 700; border-bottom: none; }
+  button {
+    width: 100%; font-size: 1.1rem; padding: 14px; border: none; border-radius: 8px;
+    background: var(--accent); color: var(--accent-text); font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .4; cursor: default; }
+  button.secondary {
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+    font-size: .95rem; padding: 10px; margin-top: 10px; font-weight: 500;
+  }
+  .hidden { display: none; }
+  footer { font-size: .8rem; color: var(--muted); text-align: center; padding-bottom: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Factory Bill Calculator</h1>
+
+  <section class="card">
+    <label for="prev">Previous meter reading</label>
+    <input id="prev" type="number" inputmode="decimal" min="0" step="any" placeholder="e.g. 12450">
+
+    <label for="curr">Current meter reading</label>
+    <input id="curr" type="number" inputmode="decimal" min="0" step="any" placeholder="e.g. 12750">
+
+    <p class="units">Units consumed: <strong id="units">–</strong></p>
+    <p id="msg" class="msg"></p>
+  </section>
+
+  <section id="result" class="hidden">
+    <div class="total">
+      <div class="label">Bill payable</div>
+      <div class="amount" id="payable">–</div>
+    </div>
+
+    <div class="card">
+      <h2>Breakdown</h2>
+      <table>
+        <tbody id="breakdown"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <button id="saveBtn">Save this month's reading</button>
+      <p id="saveMsg" class="msg"></p>
+    </div>
+  </section>
+
+  <section id="historyCard" class="card hidden">
+    <h2>Saved months</h2>
+    <table><tbody id="history"></tbody></table>
+    <button id="undoBtn" class="secondary">Remove last saved entry</button>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script>
+/* ============================================================
+   TARIFF CONFIGURATION — edit only this block when rates change
+   ============================================================ */
+const TARIFF = {
+  ratesAsOf: "Nov 2026",
+  fixedCharge: 445.00,                              // ₹ per month
+  energySlabs: [[200, 15.03], [Infinity, 17.53]],   // [up to units, ₹/unit], incremental
+  fuelSlabs:   [[200, 0.65],  [Infinity, 0.70]],    // [up to units, ₹/unit], incremental
+  unitChargeRate: 1.60,                             // ₹ per unit, all units
+  taxPct: 16                                        // % of (fixed + energy + fuel + unit charges)
+};
+const METER = { multiplyingFactor: 1 };             // change if the bill shows an MF
+/* ============================================================ */
+
+const STORAGE_KEY = "factoryBill.v1";
+const HISTORY_LIMIT = 24;
+const HISTORY_SHOWN = 6;
+
+// ---------- Calculation ----------
+function slabCharge(units, slabs) {
+  let total = 0, lower = 0;
+  for (const [upper, rate] of slabs) {
+    if (units <= lower) break;
+    total += (Math.min(units, upper) - lower) * rate;
+    lower = upper;
+  }
+  return total;
+}
+
+function slabDetail(units, slabs) {
+  const parts = [];
+  let lower = 0;
+  for (const [upper, rate] of slabs) {
+    if (units <= lower) break;
+    parts.push(`${fmtNum(Math.min(units, upper) - lower)} × ${rate.toFixed(2)}`);
+    lower = upper;
+  }
+  return parts.join(" + ") || "0 units";
+}
+
+function computeBill(units) {
+  const fixed = TARIFF.fixedCharge;
+  const energy = slabCharge(units, TARIFF.energySlabs);
+  const fuel = slabCharge(units, TARIFF.fuelSlabs);
+  const unitCharge = units * TARIFF.unitChargeRate;
+  const subtotal = fixed + energy + fuel + unitCharge;
+  const tax = subtotal * TARIFF.taxPct / 100;
+  const exact = subtotal + tax;
+  const payable = Math.round(Number(exact.toFixed(2)));   // nearest rupee
+  return { fixed, energy, fuel, unitCharge, subtotal, tax, exact, payable };
+}
+
+// ---------- Formatting ----------
+const fmtNum = n => Number(n.toFixed(2)).toLocaleString("en-IN");
+const fmtRs = n => "₹ " + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtRsWhole = n => "₹ " + n.toLocaleString("en-IN");
+const fmtDate = iso => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+
+// ---------- Storage (fails safely if unavailable) ----------
+function loadState() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (s && Array.isArray(s.history)) return s;
+  } catch (e) {}
+  return { history: [] };
+}
+function saveState(state) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); return true; }
+  catch (e) { return false; }
+}
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().catch(() => {});
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+const prevEl = $("prev"), currEl = $("curr");
+let state = loadState();
+let current = null;   // { prev, curr, units, bill } when inputs are valid
+
+function readInputs() {
+  const prevRaw = prevEl.value.trim(), currRaw = currEl.value.trim();
+  if (currRaw === "") return { error: "" };
+  if (prevRaw === "") return { error: "Enter the previous meter reading." };
+  const prev = Number(prevRaw), curr = Number(currRaw);
+  if (!Number.isFinite(prev) || !Number.isFinite(curr) || prev < 0 || curr < 0)
+    return { error: "Readings must be valid positive numbers." };
+  if (curr < prev)
+    return { error: "Current reading is less than previous reading. Please check both numbers." };
+  const units = Number(((curr - prev) * METER.multiplyingFactor).toFixed(2));
+  return { prev, curr, units };
+}
+
+function row(label, detail, amount, cls = "") {
+  return `<tr class="${cls}"><td>${label}${detail ? `<small>${detail}</small>` : ""}</td><td>${amount}</td></tr>`;
+}
+
+function render() {
+  const r = readInputs();
+  $("saveMsg").textContent = "";
+  if (r.error !== undefined) {
+    current = null;
+    $("units").textContent = "–";
+    $("msg").textContent = r.error;
+    $("msg").className = "msg error";
+    $("result").classList.add("hidden");
+    return;
+  }
+  const bill = computeBill(r.units);
+  current = { ...r, bill };
+
+  $("units").textContent = fmtNum(r.units);
+  $("msg").textContent = "";
+  $("payable").textContent = fmtRsWhole(bill.payable);
+  $("breakdown").innerHTML =
+    row("Fixed charge", "", fmtRs(bill.fixed)) +
+    row("Electricity charge", slabDetail(r.units, TARIFF.energySlabs), fmtRs(bill.energy)) +
+    row("Fuel charge", slabDetail(r.units, TARIFF.fuelSlabs), fmtRs(bill.fuel)) +
+    row("Unit charge", `${fmtNum(r.units)} × ${TARIFF.unitChargeRate.toFixed(2)}`, fmtRs(bill.unitCharge)) +
+    row("Subtotal", "", fmtRs(bill.subtotal), "sub") +
+    row(`Tax (${TARIFF.taxPct}%)`, "", fmtRs(bill.tax)) +
+    row("Total (rounded)", fmtRs(bill.exact), fmtRsWhole(bill.payable), "grand");
+  $("result").classList.remove("hidden");
+}
+
+function renderHistory() {
+  const h = state.history;
+  if (h.length === 0) { $("historyCard").classList.add("hidden"); return; }
+  $("history").innerHTML = h.slice(0, HISTORY_SHOWN).map(e =>
+    row(fmtDate(e.date), `${fmtNum(e.units)} units (${fmtNum(e.prev)} → ${fmtNum(e.curr)})`, fmtRsWhole(e.payable))
+  ).join("");
+  $("historyCard").classList.remove("hidden");
+}
+
+function prefillPrevious() {
+  const last = state.history[0];
+  prevEl.value = last ? last.curr : "";
+  currEl.value = "";
+}
+
+$("saveBtn").addEventListener("click", () => {
+  if (!current) return;
+  const last = state.history[0];
+  if (last && last.prev === current.prev && last.curr === current.curr) {
+    $("saveMsg").textContent = "This reading is already saved.";
+    $("saveMsg").className = "msg ok";
+    return;
+  }
+  if (!confirm(`Save reading ${fmtNum(current.curr)}?\nIt will be used as the previous reading next month.`)) return;
+
+  state.history.unshift({
+    date: new Date().toISOString(),
+    prev: current.prev, curr: current.curr,
+    units: current.units, payable: current.bill.payable
+  });
+  state.history = state.history.slice(0, HISTORY_LIMIT);
+
+  if (saveState(state)) {
+    renderHistory();
+    $("saveMsg").textContent = "Saved. Next month, the previous reading will be filled in automatically.";
+    $("saveMsg").className = "msg ok";
+  } else {
+    state.history.shift();
+    $("saveMsg").textContent = "Could not save on this device. Note the reading down manually.";
+    $("saveMsg").className = "msg error";
+  }
+});
+
+$("undoBtn").addEventListener("click", () => {
+  const last = state.history[0];
+  if (!last) return;
+  if (!confirm(`Remove the entry saved on ${fmtDate(last.date)} (reading ${fmtNum(last.curr)})?`)) return;
+  state.history.shift();
+  saveState(state);
+  renderHistory();
+  prefillPrevious();
+  render();
+});
+
+prevEl.addEventListener("input", render);
+currEl.addEventListener("input", render);
+
+$("footer").textContent = `Rates as of ${TARIFF.ratesAsOf}`;
+prefillPrevious();
+renderHistory();
+render();
+
+// Offline support (only works when served over http/https, not file://)
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
